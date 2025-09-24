@@ -43,6 +43,8 @@ func main() {
 	}
 	defer dir.Close()
 
+	uploadControl := make(chan, struct{}, 100) // Limit to 100 concurrent uploads
+
 	for {
 		files, err := dir.Readdir(1)
 		if err != nil {
@@ -53,12 +55,13 @@ func main() {
 			continue
 		}
 		wg.Add(1)
-		go uploadFile(files[0].Name())
+		uploadControl <- struct{}{}
+		go uploadFile(files[0].Name(), uploadControl)
 	}
 	wg.Wait()
 }
 
-func uploadFile(fileName string) {
+func uploadFile(fileName string, uploadControl <-chan struct{}) {
 	defer wg.Done()
 
 	completeFileName := fmt.Sprintf("./tmp/%s", fileName)
@@ -66,6 +69,7 @@ func uploadFile(fileName string) {
 	f, err := os.Open(completeFileName)
 	if err != nil {
 		fmt.Printf("Error opening file: %s\n", completeFileName)
+		<-uploadControl // Esvazia o canal
 		return
 	}
 	defer f.Close()
@@ -76,7 +80,9 @@ func uploadFile(fileName string) {
 	})
 	if err != nil {
 		fmt.Printf("Error uploading file: %s\n", completeFileName)
+		<-uploadControl // Esvazia o canal
 		return
 	}
 	fmt.Printf("File %s uploaded successfully\n", completeFileName)
+	<-uploadControl // Esvazia o canal
 }
